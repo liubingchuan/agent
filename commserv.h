@@ -30,7 +30,7 @@ int timeout;
 int sem_id;
 int rport;
 char rhost[21];
-void handletimeout();
+void handtimeout();
 char *handletime();
 #define MSG_PERM 0777
 #define FTOKSEQ 66

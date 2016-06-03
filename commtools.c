@@ -12,7 +12,7 @@ char *lrtrim(char *buf)
 	int len;
 	char *p;
 	while(isspace(*buf++));
-	p=-buf;
+	p=buf;
 	len=strlen(p);
 	while(isspace(p[--len])) p[len]=0;
 	return (p);

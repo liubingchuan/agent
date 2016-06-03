@@ -6,16 +6,14 @@
  */
 #include "commserv.h"
 
-main(argc, argv)
-int argc;
-char *argv[];
+main(int argc, char *argv[])
 {
 	key_t semkey;
 	int nCmdFlag;
 	int size, chid, len, i, pid, cpid, spid;
 	int hsockfd, csockfd, n, c_len, mport;
 	char lhost[21], ip[21], mhost[21];
-	struct sockadd_in sin, c_add, s_add;
+	struct sockaddr_in sin, c_add, s_add;
 	struct msqid_ds mqst;
 	struct sigaction act, oact;
 	struct hostent *hp;
@@ -40,7 +38,7 @@ char *argv[];
 		gethostname(lhost, 20);
 		hp = gethostbyname(lhost);
 		memcpy((char *)&sin.sin_addr, (char *)hp->h_addr, hp->h_length);
-		strcp(ip, inet_ntoa(sin.sin_addr));
+		strcpy(ip, inet_ntoa(sin.sin_addr));
 		if(strcmp(mhost, lhost)&&strcmp(mhost, ip))
 		{
 			fprintf(stderr, "Service wasn't registered on local machine.[%s].\n",mhost);
@@ -89,7 +87,7 @@ char *argv[];
 	}
 	if(cpid != 0)
 		exit(0);
-	signal(SIGALRM, handletimeout);
+	signal(SIGALRM, handtimeout);
 	for(;;)
 	{
 		if((hsockfd = socket(PF_INET, SOCK_STREAM, 0))<0)
@@ -205,5 +203,112 @@ int handle_request(int csockfd)
 		close(sockfd);
 		return (-5);
 	}
+	bzero((char *)&sin, sizeof(sin));
+	sin.sin_family = AF_INET;
+	memcpy((char *)&sin.sin_addr, (char *)hp->h_addr, hp->h_length);
+	sin.sin_port = htons(rport);
+	timeout = 0;
+	alarm(20);
+	if(connect(sockfd, (struct sockaddr *)&sin, sizeof(struct sockaddr))<0)
+	{
+		alarm(0);
+		errorlog("Connect:%s\n",strerror(errno));
+		close(sockfd);
+		return (-6);
+	}
+	alarm(0);
+	if( timeout ==1 )
+	{
+		errorlog("Connect [%s][%d] timeout.\n",rhost, rport);
+		timeout = 0;
+		close(sockfd);
+		return (-7);
+	}
+	buflen += 4;
+	n = writesocket(sockfd, sendbuf, buflen);
+	if(n!=buflen)
+	{
+		errorlog("Write:[%s]failed\n",buf);
+		close(sockfd);
+		return (-8);
+	}
+	bzero(retbuf, sizeof(retbuf));
+	n = readsocket(sockfd,retbuf,4);
+	if(n!=4)
+	{
+		close(sockfd);
+		return (-9);
+	}
+	retbuf[4]=0;
+	buflen=atoi(retbuf);
+	bzero(retbuf, sizeof(retbuf));
+	n=readsocket(sockfd, retbuf, buflen);
+	if(n!=buflen)
+	{
+		close(sockfd);
+		return (-11);
+	}
+	retbuf[buflen]=0;
+	errorlog("Receive the text from delegate corporation:%s\n",retbuf);
+	bzero(sendbuf, sizeof(sendbuf));
+	sprintf(sendbuf, "%04d%s",buflen, retbuf);
+	buflen += 4;
+	errorlog("Sending response text to the site:%s\n",sendbuf);
+	if(writesocket(csockfd, retbuf, buflen)!=buflen)
+	{
+		errorlog("Write [%s] failed\n",retbuf);
+		return (-14);
+	}
+	return (0);
 }
 
+int readsocket(int sockfd, char *buf, int len)
+{
+	int n,inum;
+	char errbuf[201];
+	for(inum=0;inum<len;inum+=n)
+	{
+		timeout=0;
+		alarm(10+(len-inum)/100);
+		n=read(sockfd,&buf[inum],len-inum);
+		alarm(0);
+		if(n<0)
+		{
+			if(timeout==1)
+			{
+				timeout=0;
+				errorlog("Read timeout");
+			}
+			else
+			{
+				errorlog("Read:%s\n",strerror(errno));
+			}
+			return (-1);
+		}
+	}
+	return (inum);
+}
+
+int writesocket(int sockfd, char *buf, int len)
+{
+	int n;
+	char errbuf[201];
+	timeout=0;
+	alarm(10+len/100);
+	n=write(sockfd,buf,len);
+	alarm(0);
+	if(n<0)
+	{
+		if(timeout==1)
+		{
+			timeout=0;
+			errorlog("Write timeout");
+		}
+		else
+		{
+			errorlog("Write:%s\n",strerror(errno));
+		}
+		return (-1);
+	}
+	return (n);
+}
